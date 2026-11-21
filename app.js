@@ -15,6 +15,8 @@ function h(tag, attrs, ...kids){
   for (const k of kids.flat()) if (k!=null && k!==false) el.append(k instanceof Node ? k : String(k));
   return el;
 }
+const hasMeals = p => p.repas !== null && p.repas !== undefined && p.repas !== '';
+const catLabel = p => (p.categorie || 'Autre') + (p.rayon ? ' · ' + p.rayon : '');
 const stars = n => '★'.repeat(n) + '☆'.repeat(5-n);
 const num = v => { const n = Number(v); return Number.isFinite(n) ? n : 0; };
 const signed = v => (v>=0?'+':'−') + eur.format(Math.abs(v));
@@ -63,7 +65,7 @@ function stats(list){
   const val = list.reduce((a,p)=>a+(num(p.valeur)||num(p.prix)),0);
   const rated = list.filter(p=>num(p.note));
   const avg = rated.length ? rated.reduce((a,p)=>a+num(p.note),0)/rated.length : 0;
-  const withMeals = list.filter(p=>num(p.repas)>0);
+  const withMeals = list.filter(hasMeals);
   const meals = withMeals.reduce((a,p)=>a+num(p.repas),0);
   const paidMeals = withMeals.reduce((a,p)=>a+num(p.prix),0);
   return {n:list.length, paid, saved:Math.max(0,val-paid), avg, meals, perMeal: meals ? paidMeals/meals : 0};
@@ -131,8 +133,8 @@ function renderList(){
       h('div',{class:'date'}, DAYS[d.getDay()], h('b',{}, d.getDate()), MONTHS[d.getMonth()]),
       h('div',{style:'min-width:0'},
         h('div',{class:'t'}, p.magasin),
-        h('div',{class:'meta'}, h('span',{class:'pill'},p.categorie||'Autre'), p.heure?h('span',{},'Retrait '+p.heure):null, num(p.note)?h('span',{class:'stars',title:p.note+'/5'},stars(num(p.note))):null,
-          num(p.repas) ? h('span',{},`${p.repas} repas · ${eur.format(num(p.prix)/num(p.repas))}/repas`) : null),
+        h('div',{class:'meta'}, h('span',{class:'pill'},catLabel(p)), p.heure?h('span',{},'Retrait '+p.heure):null, num(p.note)?h('span',{class:'stars',title:p.note+'/5'},stars(num(p.note))):null,
+          hasMeals(p) ? h('span',{}, num(p.repas) ? `${p.repas} repas · ${eur.format(num(p.prix)/num(p.repas))}/repas` : '0 repas') : null),
         p.contenu ? h('div',{class:'cont'}, p.contenu) : null),
       h('div',{class:'price'}, h('b',{},eur.format(num(p.prix))), value>num(p.prix)?h('s',{},eur.format(value)):null,
         h('button',{class:'del',type:'button',onclick:()=>startEdit(p)},'Modifier'),
@@ -149,7 +151,7 @@ function group(list, key){
     const paid = items.reduce((a,p)=>a+num(p.prix),0);
     const val = items.reduce((a,p)=>a+(num(p.valeur)||num(p.prix)),0);
     const r = items.filter(p=>num(p.note));
-    const wm = items.filter(p=>num(p.repas)>0), meals = wm.reduce((a,p)=>a+num(p.repas),0);
+    const wm = items.filter(hasMeals), meals = wm.reduce((a,p)=>a+num(p.repas),0);
     return {k, n:items.length, paid, perMeal: meals ? wm.reduce((a,p)=>a+num(p.prix),0)/meals : 0, ratio: paid? val/paid : 0, note: r.length? r.reduce((a,p)=>a+num(p.note),0)/r.length : 0, low: items.filter(p=>num(p.note) && num(p.note)<=2).length};
   });
 }
@@ -161,7 +163,7 @@ function bars(el, rows, fmt, max){
     h('span',{class:'num'}, fmt(r)))));
 }
 function renderStrategy(){
-  const cats = group(paniers, p=>p.categorie||'Autre').sort((a,b)=>b.ratio-a.ratio);
+  const cats = group(paniers, catLabel).sort((a,b)=>b.ratio-a.ratio);
   const order = ['Matin','Midi','Après-midi','Soir'];
   const slots = group(paniers, p=>slotOf(p.heure)).sort((a,b)=>order.indexOf(a.k)-order.indexOf(b.k));
   const stores = group(paniers, p=>p.magasin).sort((a,b)=>b.note-a.note || b.ratio-a.ratio);
@@ -200,11 +202,14 @@ function render(){ renderStrip(); renderBudget(); renderList(); renderStrategy()
 render();
 
 /* ---------- formulaires ---------- */
+const isSuper = c => c === 'Supermarché';
+function syncRayon(){ $('#rayonField').hidden = !isSuper($('#f-cat').value); }
+$('#f-cat').addEventListener('change', syncRayon);
 let editingId = null;
 function resetForm(){
   editingId = null;
   ['#f-store','#f-price','#f-value','#f-time','#f-content','#f-meals'].forEach(s=>$(s).value='');
-  $('#f-date').value = today; $('#f-note').value = '4';
+  $('#f-date').value = today; $('#f-note').value = '4'; syncRayon();
   $('#formTitle').textContent = 'Ajouter un panier';
   $('#addBtn').textContent = 'Enregistrer le panier';
   $('#cancelEdit').hidden = true;
@@ -212,8 +217,9 @@ function resetForm(){
 function startEdit(p){
   editingId = p.id;
   $('#f-date').value = p.date; $('#f-store').value = p.magasin; $('#f-cat').value = p.categorie || 'Autre';
+  if (p.rayon) $('#f-rayon').value = p.rayon; syncRayon();
   $('#f-price').value = p.prix; $('#f-value').value = num(p.valeur) || ''; $('#f-time').value = p.heure || '';
-  $('#f-note').value = String(p.note || 4); $('#f-meals').value = p.repas || ''; $('#f-content').value = p.contenu || '';
+  $('#f-note').value = String(p.note || 4); $('#f-meals').value = hasMeals(p) ? p.repas : ''; $('#f-content').value = p.contenu || '';
   $('#formTitle').textContent = 'Modifier le panier';
   $('#addBtn').textContent = 'Mettre à jour';
   $('#cancelEdit').hidden = false; $('#addMsg').textContent = '';
@@ -225,8 +231,9 @@ $('#addForm').addEventListener('submit', async e => {
   $('#addBtn').disabled = true; $('#addMsg').textContent = 'Enregistrement…';
   const row = {
     date: $('#f-date').value, magasin: $('#f-store').value.trim(), categorie: $('#f-cat').value,
+    rayon: isSuper($('#f-cat').value) ? $('#f-rayon').value : '',
     prix: num($('#f-price').value), valeur: num($('#f-value').value), heure: $('#f-time').value || '',
-    note: num($('#f-note').value), repas: Math.round(num($('#f-meals').value)) || null, contenu: $('#f-content').value.trim() };
+    note: num($('#f-note').value), repas: $('#f-meals').value === '' ? null : Math.round(num($('#f-meals').value)), contenu: $('#f-content').value.trim() };
   const wasEdit = !!editingId;
   const { error } = wasEdit ? await sb.from('paniers').update(row).eq('id', editingId) : await sb.from('paniers').insert(row);
   $('#addBtn').disabled = false;
