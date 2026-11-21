@@ -63,7 +63,10 @@ function stats(list){
   const val = list.reduce((a,p)=>a+(num(p.valeur)||num(p.prix)),0);
   const rated = list.filter(p=>num(p.note));
   const avg = rated.length ? rated.reduce((a,p)=>a+num(p.note),0)/rated.length : 0;
-  return {n:list.length, paid, saved:Math.max(0,val-paid), avg};
+  const withMeals = list.filter(p=>num(p.repas)>0);
+  const meals = withMeals.reduce((a,p)=>a+num(p.repas),0);
+  const paidMeals = withMeals.reduce((a,p)=>a+num(p.prix),0);
+  return {n:list.length, paid, saved:Math.max(0,val-paid), avg, meals, perMeal: meals ? paidMeals/meals : 0};
 }
 function weekKey(ds){ const d = new Date((ds||'')+'T12:00:00'); if (isNaN(d)) return null; d.setDate(d.getDate()-((d.getDay()+6)%7)); return localDate(d); }
 function weekLabel(k){ const d = new Date(k+'T12:00:00'); return `${d.getDate()} ${MONTHS[d.getMonth()]}`; }
@@ -87,9 +90,9 @@ function renderStrip(){
   const cell = (k,v,sub,cls) => h('div',{}, h('div',{class:'k'},k), h('div',{class:'v'+(cls?' '+cls:'')},v), h('div',{class:'s'},sub));
   $('#strip').replaceChildren(
     cell('Économie vs budget', w.done.length ? signed(w.ecoTotal) : '–', w.done.length ? `${signed(w.avg)} par semaine en moyenne` : 'après ta 1re semaine complète', w.done.length ? (w.ecoTotal>=0?'pos':'neg') : ''),
-    cell('Paniers sauvés', s.n, `${month.n} ce mois-ci`),
-    cell('Dépensé en paniers', eur.format(s.paid), `valeur annoncée ${eur.format(s.paid+s.saved)}`),
-    cell('CO₂ évité', `≈ ${(s.n*CO2_PER_BAG).toLocaleString('fr-FR',{maximumFractionDigits:1})} kg`, 'estimation 2,5 kg/panier')
+    cell('Prix moyen par repas', s.meals ? eur.format(s.perMeal) : '–', s.meals ? `${s.meals} repas · ce mois-ci ${month.meals ? eur.format(month.perMeal) : '–'}` : 'indique le nombre de repas'),
+    cell('Paniers sauvés', s.n, `${month.n} ce mois-ci · ≈ ${(s.n*CO2_PER_BAG).toLocaleString('fr-FR',{maximumFractionDigits:1})} kg CO₂ évités`),
+    cell('Dépensé en paniers', eur.format(s.paid), `valeur annoncée ${eur.format(s.paid+s.saved)}`)
   );
 }
 function confirmDel(onConfirm){
@@ -128,9 +131,11 @@ function renderList(){
       h('div',{class:'date'}, DAYS[d.getDay()], h('b',{}, d.getDate()), MONTHS[d.getMonth()]),
       h('div',{style:'min-width:0'},
         h('div',{class:'t'}, p.magasin),
-        h('div',{class:'meta'}, h('span',{class:'pill'},p.categorie||'Autre'), p.heure?h('span',{},'Retrait '+p.heure):null, num(p.note)?h('span',{class:'stars',title:p.note+'/5'},stars(num(p.note))):null),
+        h('div',{class:'meta'}, h('span',{class:'pill'},p.categorie||'Autre'), p.heure?h('span',{},'Retrait '+p.heure):null, num(p.note)?h('span',{class:'stars',title:p.note+'/5'},stars(num(p.note))):null,
+          num(p.repas) ? h('span',{},`${p.repas} repas · ${eur.format(num(p.prix)/num(p.repas))}/repas`) : null),
         p.contenu ? h('div',{class:'cont'}, p.contenu) : null),
       h('div',{class:'price'}, h('b',{},eur.format(num(p.prix))), value>num(p.prix)?h('s',{},eur.format(value)):null,
+        h('button',{class:'del',type:'button',onclick:()=>startEdit(p)},'Modifier'),
         h('button',{class:'del',type:'button',onclick:confirmDel(()=>sb.from('paniers').delete().eq('id',p.id).then(r=>{if(r.error)throw r.error;}))},'Supprimer')));
   }));
 }
@@ -144,7 +149,8 @@ function group(list, key){
     const paid = items.reduce((a,p)=>a+num(p.prix),0);
     const val = items.reduce((a,p)=>a+(num(p.valeur)||num(p.prix)),0);
     const r = items.filter(p=>num(p.note));
-    return {k, n:items.length, paid, ratio: paid? val/paid : 0, note: r.length? r.reduce((a,p)=>a+num(p.note),0)/r.length : 0, low: items.filter(p=>num(p.note) && num(p.note)<=2).length};
+    const wm = items.filter(p=>num(p.repas)>0), meals = wm.reduce((a,p)=>a+num(p.repas),0);
+    return {k, n:items.length, paid, perMeal: meals ? wm.reduce((a,p)=>a+num(p.prix),0)/meals : 0, ratio: paid? val/paid : 0, note: r.length? r.reduce((a,p)=>a+num(p.note),0)/r.length : 0, low: items.filter(p=>num(p.note) && num(p.note)<=2).length};
   });
 }
 function bars(el, rows, fmt, max){
@@ -165,14 +171,16 @@ function renderStrategy(){
   const t = $('#storeTable');
   if (!stores.length) t.replaceChildren(h('tr',{},h('td',{class:'muted'},'Pas encore de commerce enregistré.')));
   else t.replaceChildren(
-    h('thead',{},h('tr',{},h('th',{},'Commerce'),h('th',{class:'n'},'Paniers'),h('th',{class:'n'},'Note'),h('th',{class:'n'},'Valeur/€'),h('th',{class:'n'},'Déceptions'))),
-    h('tbody',{},...stores.map(s=>h('tr',{},h('td',{},s.k),h('td',{class:'n'},s.n),h('td',{class:'n'},s.note?s.note.toFixed(1):'–'),h('td',{class:'n'},'×'+s.ratio.toFixed(1)),h('td',{class:'n'},s.low||'–')))));
+    h('thead',{},h('tr',{},h('th',{},'Commerce'),h('th',{class:'n'},'Paniers'),h('th',{class:'n'},'Note'),h('th',{class:'n'},'Valeur/€'),h('th',{class:'n'},'€/repas'),h('th',{class:'n'},'Déceptions'))),
+    h('tbody',{},...stores.map(s=>h('tr',{},h('td',{},s.k),h('td',{class:'n'},s.n),h('td',{class:'n'},s.note?s.note.toFixed(1):'–'),h('td',{class:'n'},'×'+s.ratio.toFixed(1)),h('td',{class:'n'},s.perMeal?eur.format(s.perMeal):'–'),h('td',{class:'n'},s.low||'–')))));
   const ins = [];
   const add = (txt, warn) => ins.push(h('li',{},h('span',{class:'mk'+(warn?' w':'')}),h('span',{},txt)));
   if (paniers.length < 3) add('Enregistre au moins 3 paniers pour voir apparaître des tendances fiables.', true);
   else {
     const s = stats(paniers);
     add(`Pour chaque euro payé, tu récupères en moyenne ${(s.paid ? (s.paid+s.saved)/s.paid : 0).toFixed(1).replace('.',',')} € de produits.`);
+    const cheapest = [...stores].filter(x=>x.perMeal).sort((a,b)=>a.perMeal-b.perMeal)[0];
+    if (cheapest) add(`Le repas le moins cher : ${cheapest.k}, ${eur.format(cheapest.perMeal)} par repas.`);
     if (cats[0]) add(`Ton meilleur rapport valeur/prix : ${cats[0].k} (×${cats[0].ratio.toFixed(1)} sur ${cats[0].n} panier${cats[0].n>1?'s':''}).`);
     const best = stores.find(s=>s.n>=2) || stores[0];
     if (best && best.note>=4) add(`Commerce à garder en favori : ${best.k} (${best.note.toFixed(1)}/5).`);
@@ -192,17 +200,39 @@ function render(){ renderStrip(); renderBudget(); renderList(); renderStrategy()
 render();
 
 /* ---------- formulaires ---------- */
+let editingId = null;
+function resetForm(){
+  editingId = null;
+  ['#f-store','#f-price','#f-value','#f-time','#f-content','#f-meals'].forEach(s=>$(s).value='');
+  $('#f-date').value = today; $('#f-note').value = '4';
+  $('#formTitle').textContent = 'Ajouter un panier';
+  $('#addBtn').textContent = 'Enregistrer le panier';
+  $('#cancelEdit').hidden = true;
+}
+function startEdit(p){
+  editingId = p.id;
+  $('#f-date').value = p.date; $('#f-store').value = p.magasin; $('#f-cat').value = p.categorie || 'Autre';
+  $('#f-price').value = p.prix; $('#f-value').value = num(p.valeur) || ''; $('#f-time').value = p.heure || '';
+  $('#f-note').value = String(p.note || 4); $('#f-meals').value = p.repas || ''; $('#f-content').value = p.contenu || '';
+  $('#formTitle').textContent = 'Modifier le panier';
+  $('#addBtn').textContent = 'Mettre à jour';
+  $('#cancelEdit').hidden = false; $('#addMsg').textContent = '';
+  $('#addPanel').scrollIntoView({behavior:'smooth', block:'start'});
+}
+$('#cancelEdit').addEventListener('click', () => { resetForm(); $('#addMsg').textContent = ''; });
 $('#addForm').addEventListener('submit', async e => {
   e.preventDefault(); if (!ready) return;
   $('#addBtn').disabled = true; $('#addMsg').textContent = 'Enregistrement…';
-  const { error } = await sb.from('paniers').insert({
+  const row = {
     date: $('#f-date').value, magasin: $('#f-store').value.trim(), categorie: $('#f-cat').value,
     prix: num($('#f-price').value), valeur: num($('#f-value').value), heure: $('#f-time').value || '',
-    note: num($('#f-note').value), contenu: $('#f-content').value.trim() });
+    note: num($('#f-note').value), repas: Math.round(num($('#f-meals').value)) || null, contenu: $('#f-content').value.trim() };
+  const wasEdit = !!editingId;
+  const { error } = wasEdit ? await sb.from('paniers').update(row).eq('id', editingId) : await sb.from('paniers').insert(row);
   $('#addBtn').disabled = false;
   if (error){ $('#addMsg').textContent = 'Impossible d’enregistrer. Vérifie ta connexion et réessaie.'; return; }
-  $('#addMsg').textContent = 'Panier enregistré.';
-  ['#f-store','#f-price','#f-value','#f-time','#f-content'].forEach(s=>$(s).value='');
+  resetForm();
+  $('#addMsg').textContent = wasEdit ? 'Panier mis à jour.' : 'Panier enregistré.';
   loadAll();
 });
 $('#courseForm').addEventListener('submit', async e => {
@@ -298,7 +328,7 @@ $('#adviceBtn').addEventListener('click', async () => {
   const g = renderStrategy(), s = stats(paniers), wk = weeks();
   const resume = {
     budgetCoursesHebdo: budget, economieVsBudgetTotale: +wk.ecoTotal.toFixed(2), economieMoyenneParSemaine: +wk.avg.toFixed(2), semainesCompletes: wk.done.length,
-    paniers: s.n, depensePaniers: +s.paid.toFixed(2), noteMoyenne: +s.avg.toFixed(2),
+    paniers: s.n, depensePaniers: +s.paid.toFixed(2), noteMoyenne: +s.avg.toFixed(2), repasSauves: s.meals, prixMoyenParRepas: +s.perMeal.toFixed(2),
     parType: g.cats.map(c=>({type:c.k,n:c.n,valeurParEuro:+c.ratio.toFixed(2),note:+c.note.toFixed(1)})),
     parCreneau: g.slots.map(c=>({creneau:c.k,n:c.n,note:+c.note.toFixed(1)})),
     parJour: g.days.map(c=>({jour:c.k,n:c.n,note:+c.note.toFixed(1)})),

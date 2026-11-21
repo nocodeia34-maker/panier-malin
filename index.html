@@ -178,8 +178,8 @@ img{max-width:100%}
       <details><summary class="small">Dernières courses notées</summary><div class="mini" id="courseList"></div></details>
     </div>
 
-    <div class="panel">
-      <div class="row-head"><h2>Ajouter un panier</h2><span class="small muted">Valeur = prix affiché avant réduction</span></div>
+    <div class="panel" id="addPanel">
+      <div class="row-head"><h2 id="formTitle">Ajouter un panier</h2><span class="small muted">Valeur = prix affiché avant réduction</span></div>
       <form class="grid" id="addForm" autocomplete="off">
         <div class="f c2"><label for="f-date">Date</label><input type="date" id="f-date" required></div>
         <div class="f c2"><label for="f-store">Commerce</label><input id="f-store" placeholder="Boulangerie Martin" required maxlength="60" list="stores"></div>
@@ -190,8 +190,9 @@ img{max-width:100%}
         <div class="f c2"><label for="f-time">Heure de retrait</label><input type="time" id="f-time"></div>
         <div class="f c2"><label for="f-note">Note</label>
           <select id="f-note"><option value="5">★★★★★ Génial</option><option value="4" selected>★★★★ Bien</option><option value="3">★★★ Correct</option><option value="2">★★ Décevant</option><option value="1">★ À éviter</option></select></div>
-        <div class="f" style="grid-column:span 4"><label for="f-content">Contenu (facultatif)</label><input id="f-content" placeholder="2 baguettes, 3 croissants, 1 flan" maxlength="300"></div>
-        <div class="c6 actions"><button class="btn" type="submit" id="addBtn">Enregistrer le panier</button><span class="small muted" id="addMsg" role="status"></span></div>
+        <div class="f c2"><label for="f-meals">Nombre de repas</label><input type="number" id="f-meals" min="1" max="50" step="1" inputmode="numeric" placeholder="3"></div>
+        <div class="f c6"><label for="f-content">Contenu (facultatif)</label><input id="f-content" placeholder="2 baguettes, 3 croissants, 1 flan" maxlength="300"></div>
+        <div class="c6 actions"><button class="btn" type="submit" id="addBtn">Enregistrer le panier</button><button class="btn ghost" type="button" id="cancelEdit" hidden>Annuler</button><span class="small muted" id="addMsg" role="status"></span></div>
       </form>
       <datalist id="stores"></datalist>
     </div>
